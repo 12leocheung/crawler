@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEAD CELLS // Conway Protocol</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;color:#0f0;font-family:'Share Tech Mono',monospace;overflow:hidden;width:100vw;height:100vh;}
+#ui{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;}
+#hud{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.hud-panel{background:rgba(0,0,0,0.82);border:1px solid #0f04;padding:8px 14px;font-size:11px;letter-spacing:1px;flex-shrink:0;}
+.hud-title{color:#0f07;font-size:9px;margin-bottom:3px;letter-spacing:2px;}
+.hud-val{color:#0ff;font-size:15px;font-family:'Orbitron',monospace;font-weight:700;}
+.bar-wrap{height:5px;background:#111;border:1px solid #0f03;margin-top:3px;}
+#hp-bar-wrap{width:150px;}
+#hp-bar{height:100%;background:linear-gradient(90deg,#f00,#f80);transition:width 0.15s;}
+#life-timer-panel{text-align:center;flex:1;}
+#life-countdown{font-size:22px;color:#f80;font-family:'Orbitron',monospace;font-weight:900;text-shadow:0 0 8px #f80;}
+#right-panel{text-align:right;}
+#weapon-name{font-size:10px;color:#ff0;letter-spacing:1px;margin-top:2px;}
+#boss-bar-outer{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);width:400px;display:none;text-align:center;}
+#boss-name-label{font-family:'Orbitron',monospace;font-size:13px;color:#f0f;letter-spacing:3px;text-shadow:0 0 10px #f0f;margin-bottom:4px;}
+#boss-bar-bg{width:100%;height:14px;background:#1a001a;border:1px solid #f0f6;}
+#boss-bar-fill{height:100%;background:linear-gradient(90deg,#a00,#f0f);transition:width 0.1s;}
+#boss-phase-label{font-size:9px;color:#f0f8;margin-top:2px;}
+#msg-overlay{position:absolute;inset:0;background:#000d;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:all;}
+#msg-overlay.hidden{display:none;}
+#msg-title{font-family:'Orbitron',monospace;font-size:36px;font-weight:900;color:#0ff;text-shadow:0 0 20px #0ff,0 0 60px #0f8;letter-spacing:5px;text-align:center;}
+#msg-sub{font-size:12px;color:#0f0;margin-top:10px;letter-spacing:2px;text-align:center;max-width:520px;line-height:2;}
+#msg-hint{font-size:11px;color:#0f06;margin-top:20px;letter-spacing:2px;animation:blink 1s infinite;}
+#win-stats{font-size:13px;color:#ff0;margin-top:14px;letter-spacing:1px;line-height:2.2;font-family:'Orbitron',monospace;text-align:center;}
+#controls-hint{font-size:10px;color:#0f05;margin-top:12px;line-height:1.8;text-align:center;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+#loot-popup{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:#0009;border:1px solid #ff0;color:#ff0;padding:6px 20px;font-size:12px;letter-spacing:2px;opacity:0;transition:opacity 0.3s;white-space:nowrap;}
+#notify{position:absolute;top:80px;left:50%;transform:translateX(-50%);background:#0009;border:1px solid #0ff;color:#0ff;padding:6px 20px;font-size:11px;letter-spacing:2px;opacity:0;transition:opacity 0.4s;white-space:nowrap;}
+#minimap-wrap{position:absolute;bottom:12px;right:12px;}
+#minimap{border:1px solid #0f04;background:#000;display:block;}
+#key-hud{position:absolute;bottom:18px;left:14px;font-size:12px;color:#ff0;letter-spacing:1px;}
+canvas#canvas{display:block;cursor:none;}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div class="hud-panel">
+      <div class="hud-title">INTEGRITY</div>
+      <div class="hud-val" id="hp-val">120</div>
+      <div class="bar-wrap" id="hp-bar-wrap"><div id="hp-bar" style="width:100%"></div></div>
+    </div>
+    <div class="hud-panel" id="life-timer-panel">
+      <div class="hud-title">CONWAY CYCLE</div>
+      <div id="life-countdown">5.0</div>
+      <div class="hud-title" style="margin-top:2px">GEN <span id="gen-val">0</span></div>
+    </div>
+    <div class="hud-panel" id="right-panel">
+      <div class="hud-title">SCORE</div>
+      <div class="hud-val" id="score-val">0</div>
+      <div id="weapon-name">PULSE RIFLE</div>
+    </div>
+  </div>
+  <div id="boss-bar-outer">
+    <div id="boss-name-label">NEXUS CORE</div>
+    <div id="boss-bar-bg"><div id="boss-bar-fill" style="width:100%"></div></div>
+    <div id="boss-phase-label">PHASE I</div>
+  </div>
+  <div id="minimap-wrap"><canvas id="minimap" width="150" height="95"></canvas></div>
+  <div id="key-hud">🔑 <span id="keys-val">0</span> / <span id="keys-need">3</span></div>
+  <div id="loot-popup"></div>
+  <div id="notify"></div>
+  <div id="msg-overlay">
+    <div id="msg-title">DEAD CELLS</div>
+    <div id="msg-sub">// CONWAY PROTOCOL //</div>
+    <div id="win-stats"></div>
+    <div id="controls-hint">WASD / ARROWS — Move &amp; Jump &nbsp;|&nbsp; MOUSE — Aim &nbsp;|&nbsp; CLICK / Z — Shoot<br>Collect 🔑 Key Fragments to unlock the Boss Chamber &nbsp;|&nbsp; Defeat NEXUS CORE &nbsp;|&nbsp; Reach the EXIT</div>
+    <div id="msg-hint">CLICK OR PRESS SPACE TO BEGIN</div>
+  </div>
+</div>
+<script>
+'use strict';
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const miniCanvas=document.getElementById('minimap');
+const miniCtx=miniCanvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;}
+resize();window.addEventListener('resize',resize);
+
+const TILE=18,COLS=120,ROWS=70,MAP_W=120*18,MAP_H=70*18,LIFE_INTERVAL=5000,GRAV=0.44;
+
+let gameState='menu',score=0,generation=0,lifeTimer=0;
+let keysCollected=0,keysNeeded=3;
+let bossActive=false,bossDefeated=false;
+let flashColor=null,flashAlpha=0,screenShake=0;
+
+const kb={};let mx=0,my=0,mdown=false,fireTimer=0;
+addEventListener('keydown',e=>{kb[e.code]=true;if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();});
+addEventListener('keyup',e=>kb[e.code]=false);
+canvas.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;});
+canvas.addEventListener('mousedown',()=>{mdown=true;if(gameState!=='play')startGame();});
+canvas.addEventListener('mouseup',()=>mdown=false);
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('keydown',e=>{if(e.code==='Space'&&gameState!=='play')startGame();});
+
+let camX=0,camY=0;
+let grid=[];
+
+function makeGrid(){return Array.from({length:ROWS},()=>new Uint8Array(COLS));}
+
+function carveRoom(g,r,c,w,h){
+  for(let dr=0;dr<h;dr++)for(let dc=0;dc<w;dc++){
+    const rr=r+dr,cc=c+dc;
+    if(rr>0&&rr<ROWS-1&&cc>0&&cc<COLS-1)g[rr][cc]=0;
+  }
+}
+function carvePath(g,r1,c1,r2,c2){
+  let r=r1,c=c1;
+  while(r!==r2){r+=(r<r2?1:-1);if(r>0&&r<ROWS-1&&c>0&&c<COLS-1)g[r][c]=0;}
+  while(c!==c2){c+=(c<c2?1:-1);if(r>0&&r<ROWS-1&&c>0&&c<COLS-1)g[r][c]=0;}
+}
+
+// Room defs: [row, col, width, height]
+const ROOM_DEFS=[
+  [ROWS/2-5, 2, 15, 10],    // 0 spawn
+  [ROWS/2-4, 22, 16, 8],   // 1
+  [8, 18, 14, 8],           // 2 upper
+  [ROWS-20, 18, 18, 9],     // 3 lower
+  [ROWS/2-5, 42, 15, 9],   // 4
+  [6, 40, 16, 8],           // 5 upper
+  [ROWS-18, 40, 16, 8],     // 6 lower
+  [ROWS/2-5, 62, 16, 9],   // 7
+  [8, 60, 14, 7],           // 8
+  [ROWS-17, 62, 18, 9],     // 9
+  [ROWS/2-6, 82, 18, 10],  // 10
+  [5, 82, 14, 7],           // 11
+  [ROWS-16, 82, 16, 8],    // 12
+  [ROWS/2-7, 102, 20, 12], // 13 boss
+];
+
+function generateMap(){
+  const g=makeGrid();
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)g[r][c]=1;
+  ROOM_DEFS.forEach(([r,c,w,h])=>carveRoom(g,r,c,w,h));
+  // Connect sequentially + vertically
+  for(let i=0;i<ROOM_DEFS.length-1;i++){
+    const[r1,c1,w1,h1]=ROOM_DEFS[i];const[r2,c2,w2,h2]=ROOM_DEFS[i+1];
+    carvePath(g,Math.floor(r1+h1/2),Math.floor(c1+w1/2),Math.floor(r2+h2/2),Math.floor(c2+w2/2));
+  }
+  // Extra cross-links for exploration
+  [[1,2],[2,3],[4,5],[5,6],[7,8],[8,9],[10,11],[11,12]].forEach(([a,b])=>{
+    const[r1,c1,w1,h1]=ROOM_DEFS[a];const[r2,c2,w2,h2]=ROOM_DEFS[b];
+    carvePath(g,Math.floor(r1+h1/2),Math.floor(c1+w1/2),Math.floor(r2+h2/2),Math.floor(c2+w2/2));
+  });
+  // Random open areas for Conway variation
+  for(let i=0;i<40;i++){
+    const r=2+Math.floor(Math.random()*(ROWS-4)),c=2+Math.floor(Math.random()*(COLS-4));
+    carveRoom(g,r,c,3+Math.floor(Math.random()*5),2+Math.floor(Math.random()*4));
+  }
+  // Noise
+  for(let r=1;r<ROWS-1;r++)for(let c=1;c<COLS-1;c++)if(g[r][c]===1&&Math.random()<0.28)g[r][c]=0;
+  return g;
+}
+
+function stepConway(g){
+  const ng=makeGrid();
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    let n=0;
+    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+      if(!dr&&!dc)continue;const nr=r+dr,nc=c+dc;
+      if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS)n+=g[nr][nc];
+    }
+    ng[r][c]=g[r][c]?(n===2||n===3?1:0):(n===3?1:0);
+  }
+  return ng;
+}
+
+function detectRooms(g){
+  const vis=makeGrid();const rooms=[];
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    if(!g[r][c]&&!vis[r][c]){
+      const cells=[];const stack=[[r,c]];
+      while(stack.length){const[cr,cc]=stack.pop();if(cr<0||cr>=ROWS||cc<0||cc>=COLS||g[cr][cc]||vis[cr][cc])continue;vis[cr][cc]=1;cells.push([cr,cc]);stack.push([cr-1,cc],[cr+1,cc],[cr,cc-1],[cr,cc+1]);}
+      rooms.push(cells);
+    }
+  }
+  return rooms.sort((a,b)=>b.length-a.length);
+}
+
+// ─── Entities
+let player,enemies=[],bullets=[],particles=[],lootDrops=[],keyItems=[],doors=[];
+let boss=null,exitPortal=null,bossRoomCenter={x:0,y:0};
+
+const WEAPONS={
+  pulse:  {name:'PULSE RIFLE', fireRate:195,dmg:25,spread:0.05,burst:1,speed:16,color:'#0ff',r:4},
+  scatter:{name:'SCATTER GUN', fireRate:270,dmg:18,spread:0.30,burst:5,speed:12,color:'#f80',r:3},
+  railgun:{name:'RAIL GUN',    fireRate:600,dmg:95,spread:0.01,burst:1,speed:28,color:'#ff0',r:5},
+  plasma: {name:'PLASMA BURST',fireRate:110,dmg:20,spread:0.09,burst:2,speed:15,color:'#f0f',r:4},
+  heavy:  {name:'HEAVY CANNON',fireRate:480,dmg:65,spread:0.03,burst:1,speed:18,color:'#fa0',r:6},
+  laser:  {name:'LASER RIFLE', fireRate:80, dmg:15,spread:0.00,burst:1,speed:30,color:'#0f0',r:3},
+};
+
+function makePlayer(x,y){return{x,y,vx:0,vy:0,w:14,h:22,hp:120,maxHp:120,speed:3.0,onGround:false,facing:1,weapon:{...WEAPONS.pulse},invincible:0,animFrame:0,animTimer:0,hasJumped:false};}
+
+function makeEnemy(type,x,y){
+  const B={x,y,vx:0,vy:0,onGround:false,facing:-1,fireTimer:Math.random()*2000,animFrame:0,animTimer:0,type,alert:false,alertTimer:0,dmg:10,speed:1};
+  switch(type){
+    case'crawler': return{...B,w:14,h:18,hp:40,maxHp:40,speed:1.9,dmg:12,color:'#f44',body:'#3a0000'};
+    case'ranged':  return{...B,w:14,h:18,hp:35,maxHp:35,speed:1.0,dmg:12,fireRate:1700,color:'#f80',body:'#2a1000'};
+    case'tank':    return{...B,w:22,h:26,hp:130,maxHp:130,speed:0.85,dmg:22,color:'#aaa',body:'#222'};
+    case'flyer':   return{...B,w:12,h:12,hp:28,maxHp:28,speed:2.5,dmg:9,color:'#f4f',body:'#2a002a',fly:true};
+    case'sniper':  return{...B,w:14,h:18,hp:30,maxHp:30,speed:0.5,dmg:32,fireRate:3200,color:'#ff0',body:'#1a1a00'};
+    case'bomber':  return{...B,w:16,h:20,hp:50,maxHp:50,speed:1.7,dmg:38,color:'#f40',body:'#2a0800'};
+    case'swarm':   return{...B,w:8,h:8,hp:10,maxHp:10,speed:2.9,dmg:6,color:'#0ff',body:'#002020'};
+    case'shield':  return{...B,w:18,h:22,hp:90,maxHp:90,speed:1.1,dmg:15,color:'#44f',body:'#00008a',blocked:false,blockCd:0};
+    case'leaper':  return{...B,w:14,h:16,hp:35,maxHp:35,speed:2.2,dmg:16,color:'#0f8',body:'#003a18',leapCd:0};
+    default:       return{...B,w:14,h:18,hp:40,maxHp:40,speed:1.4,dmg:10,color:'#f44',body:'#3a0000'};
+  }
+}
+
+const ALL_TYPES=['crawler','ranged','tank','flyer','sniper','bomber','swarm','shield','leaper'];
+
+function spawnEnemies(rooms){
+  enemies=[];
+  for(let i=1;i<rooms.length-1;i++){
+    const room=rooms[i];if(room.length<12)continue;
+    const count=Math.min(Math.floor(room.length/25)+1,8);
+    const pool=i<3?['crawler','ranged','leaper']:
+               i<6?['crawler','ranged','tank','flyer','leaper']:
+                    ALL_TYPES;
+    for(let e=0;e<count;e++){
+      const cell=room[Math.floor(Math.random()*room.length)];
+      const type=pool[Math.floor(Math.random()*pool.length)];
+      enemies.push(makeEnemy(type,cell[1]*TILE+TILE/2,cell[0]*TILE));
+    }
+    if(i>5&&room.length>50){
+      for(let s=0;s<6;s++){
+        const cell=room[Math.floor(Math.random()*room.length)];
+        enemies.push(makeEnemy('swarm',cell[1]*TILE+TILE/2,cell[0]*TILE));
+      }
+    }
+  }
+}
+
+// ─── BOSS
+function spawnBoss(bossRoom){
+  if(!bossRoom||bossRoom.length<20){bossDefeated=true;return;}
+  const mid=bossRoom[Math.floor(bossRoom.length/2)];
+  bossRoomCenter={x:mid[1]*TILE,y:mid[0]*TILE};
+  boss={x:mid[1]*TILE,y:mid[0]*TILE-80,vx:1.5,vy:0,w:44,h:52,hp:1400,maxHp:1400,
+    onGround:false,facing:1,phase:1,phaseAnnounced:false,
+    fireTimer:0,fireRate:900,orbitAngle:0,
+    minionTimer:0,dashTimer:0,dashCd:3000,
+    dead:false,animFrame:0,animTimer:0,name:'NEXUS CORE'};
+  exitPortal=null;
+  bossActive=true;
+  document.getElementById('boss-bar-outer').style.display='block';
+}
+
+function updateBoss(dt){
+  if(!boss||boss.dead)return;
+  boss.animTimer+=dt;if(boss.animTimer>100){boss.animTimer=0;boss.animFrame=(boss.animFrame+1)%8;}
+  const px=player.x,py=player.y+player.h/2;
+  const dx=px-boss.x,dy=py-boss.y-boss.h/2,dist=Math.sqrt(dx*dx+dy*dy);
+  boss.facing=dx>0?1:-1;
+  const pct=boss.hp/boss.maxHp;
+  if(pct<0.66&&boss.phase===1){boss.phase=2;triggerPhase(2);}
+  if(pct<0.33&&boss.phase===2){boss.phase=3;triggerPhase(3);}
+
+  if(boss.phase===1){
+    boss.vx=boss.facing*2.0;
+    if(boss.onGround&&Math.random()<0.014)boss.vy=-11;
+    if(boss.vx===0||dist>600)boss.facing*=-1;
+  } else if(boss.phase===2){
+    boss.dashTimer+=dt;
+    if(boss.dashTimer>boss.dashCd){
+      boss.dashTimer=0;const a=Math.atan2(dy,dx);
+      boss.vx=Math.cos(a)*15;boss.vy=Math.sin(a)*15-3;
+      screenShake=16;spawnParticles(boss.x,boss.y+boss.h/2,'#f0f',24);
+    }
+    boss.vx*=0.91;if(Math.abs(boss.vx)<0.5)boss.vx=boss.facing*2.8;
+  } else {
+    boss.vx+=boss.facing*0.35;boss.vx=Math.max(-5,Math.min(5,boss.vx));
+    if(boss.onGround&&Math.random()<0.05)boss.vy=-13;
+    if(boss.vx===0)boss.facing*=-1;
+  }
+
+  boss.fireTimer+=dt;
+  const fr=boss.phase===1?boss.fireRate:boss.phase===2?480:240;
+  if(boss.fireTimer>fr){
+    boss.fireTimer=0;const a=Math.atan2(dy,dx);
+    if(boss.phase===1){bShot(a,0,'#f0f',12,12);}
+    else if(boss.phase===2){[-0.28,0,0.28].forEach(o=>bShot(a,o,'#f0f',12,12));bShot(a,0,'#ff0',9,9);}
+    else{for(let i=0;i<8;i++)bShot(a,i*Math.PI*2/8,'#f00',9,10);bShot(a,0,'#fff',14,16);bShot(a,Math.PI,'#fff',14,16);}
+  }
+
+  if(boss.phase>=2){
+    boss.minionTimer+=dt;
+    const mr=boss.phase===2?8000:4000;
+    if(boss.minionTimer>mr){
+      boss.minionTimer=0;
+      for(let i=0;i<(boss.phase===2?2:5);i++){
+        const t=boss.phase===3?ALL_TYPES[Math.floor(Math.random()*ALL_TYPES.length)]:'crawler';
+        enemies.push(makeEnemy(t,boss.x+(Math.random()-0.5)*100,boss.y));
+      }
+      notify('NEXUS SPAWNING DEFENSES');
+    }
+  }
+
+  if(boss.phase===3){
+    boss.orbitAngle+=0.05;
+    if(Math.floor(boss.fireTimer)%200===0){
+      for(let i=0;i<6;i++){
+        const a=boss.orbitAngle+i*Math.PI/3;
+        bullets.push({x:boss.x+Math.cos(a)*60,y:boss.y+boss.h/2+Math.sin(a)*60,
+          vx:Math.cos(a+Math.PI/2)*5,vy:Math.sin(a+Math.PI/2)*5,
+          dmg:10,owner:'enemy',life:90,color:'#f006',r:4});
+      }
+    }
+  }
+
+  resolveAABB(boss);
+  if(boss.vx===0)boss.facing*=-1;
+
+  if(Math.abs(boss.x-px)<boss.w/2+player.w/2&&Math.abs(boss.y+boss.h/2-py)<boss.h/2+player.h/2){
+    if(!player.invincible){player.hp-=28;player.invincible=80;screenShake=12;spawnParticles(player.x,player.y,'#f0f',14);}
+  }
+
+  if(boss.hp<=0&&!boss.dead){
+    boss.dead=true;bossDefeated=true;bossActive=false;score+=1000;screenShake=30;
+    for(let i=0;i<80;i++)setTimeout(()=>spawnParticles(boss.x+(Math.random()-0.5)*120,boss.y+(Math.random()-0.5)*100,'#ff0',4),i*30);
+    setTimeout(()=>{exitPortal={x:bossRoomCenter.x+80,y:bossRoomCenter.y};notify('NEXUS DESTROYED — EXIT PORTAL OPEN');},2500);
+    document.getElementById('boss-bar-outer').style.display='none';
+  }
+  const pf=Math.max(0,boss.hp/boss.maxHp);
+  document.getElementById('boss-bar-fill').style.width=(pf*100)+'%';
+  document.getElementById('boss-bar-fill').style.background=boss.phase===3?'linear-gradient(90deg,#f00,#f80)':boss.phase===2?'linear-gradient(90deg,#900,#f0f)':'linear-gradient(90deg,#a00,#f0f)';
+  document.getElementById('boss-phase-label').textContent='PHASE '+['I','II','III'][boss.phase-1];
+}
+
+function triggerPhase(p){
+  flashColor=p===3?'#f00':'#f0f';flashAlpha=0.55;screenShake=22;
+  notify('NEXUS CORE — PHASE '+['','II','III'][p-1]+' INITIATED');
+  spawnParticles(boss.x,boss.y+boss.h/2,p===3?'#f00':'#f0f',50);
+}
+function bShot(a,o,col,spd,dmg){
+  const ang=a+o;
+  bullets.push({x:boss.x,y:boss.y+boss.h/2,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,dmg,owner:'enemy',life:100,color:col,r:5});
+}
+
+// ─── Keys / Doors
+function spawnKeysAndDoors(rooms){
+  keyItems=[];doors=[];keysCollected=0;keysNeeded=3;
+  [2,5,9].forEach((ri,idx)=>{
+    const room=rooms[Math.min(ri,rooms.length-2)];if(!room||!room.length)return;
+    const c=room[Math.floor(room.length*0.5)];
+    keyItems.push({x:c[1]*TILE+TILE/2,y:c[0]*TILE-TILE,idx,picked:false});
+  });
+  const bossRoom=rooms[rooms.length-1];
+  if(bossRoom&&bossRoom.length){
+    const ec=bossRoom[Math.floor(bossRoom.length*0.08)];
+    doors.push({x:ec[1]*TILE-TILE,y:ec[0]*TILE-TILE*2,locked:true,w:TILE,h:TILE*3});
+  }
+  document.getElementById('keys-need').textContent=keysNeeded;
+  document.getElementById('keys-val').textContent=keysCollected;
+}
+
+// ─── Loot
+const LOOT_TABLE=[
+  {name:'HEALTH +50',color:'#f44',icon:'♥',effect:p=>{p.hp=Math.min(p.maxHp,p.hp+50);}},
+  {name:'HEALTH +25',color:'#f88',icon:'♥',effect:p=>{p.hp=Math.min(p.maxHp,p.hp+25);}},
+  {name:'MAX HP+20', color:'#f00',icon:'↑',effect:p=>{p.maxHp+=20;p.hp=Math.min(p.maxHp,p.hp+20);}},
+  {name:'SCATTER GUN',color:'#f80',icon:'❖',effect:p=>{p.weapon={...WEAPONS.scatter};}},
+  {name:'RAIL GUN',  color:'#ff0',icon:'▶',effect:p=>{p.weapon={...WEAPONS.railgun};}},
+  {name:'PLASMA',    color:'#f0f',icon:'◉',effect:p=>{p.weapon={...WEAPONS.plasma};}},
+  {name:'HEAVY CANNON',color:'#fa0',icon:'◈',effect:p=>{p.weapon={...WEAPONS.heavy};}},
+  {name:'LASER RIFLE',color:'#0f0',icon:'|',effect:p=>{p.weapon={...WEAPONS.laser};}},
+  {name:'SPEED+',    color:'#0ff',icon:'⚡',effect:p=>{p.speed=Math.min(5.5,p.speed+0.5);}},
+];
+function spawnLoot(rooms){
+  lootDrops=[];
+  for(let i=1;i<rooms.length-1;i++){
+    const room=rooms[i];if(room.length<10)continue;
+    if(Math.random()>0.55)continue;
+    const c=room[Math.floor(room.length*0.45)];
+    const l=LOOT_TABLE[Math.floor(Math.random()*LOOT_TABLE.length)];
+    lootDrops.push({x:c[1]*TILE+TILE/2,y:c[0]*TILE,picked:false,...l});
+  }
+  // Guaranteed weapons
+  [[3,'scatter'],[7,'plasma'],[10,'railgun']].forEach(([ri,wk])=>{
+    const room=rooms[Math.min(ri,rooms.length-2)];if(!room||!room.length)return;
+    const c=room[Math.floor(room.length*0.35)];const wep=WEAPONS[wk];
+    lootDrops.push({x:c[1]*TILE+TILE/2,y:c[0]*TILE,picked:false,name:wep.name,color:wep.color,icon:'◆',effect:p=>{p.weapon={...wep};}});
+  });
+}
+
+// ─── Game Start
+function startGame(){
+  gameState='play';score=0;generation=0;lifeTimer=LIFE_INTERVAL;
+  bossActive=false;bossDefeated=false;boss=null;exitPortal=null;
+  keysCollected=0;screenShake=0;flashAlpha=0;
+  bullets=[];particles=[];enemies=[];lootDrops=[];keyItems=[];doors=[];
+  grid=generateMap();
+  const rooms=detectRooms(grid);
+  const sp=rooms[0]?rooms[0][Math.floor(rooms[0].length/2)]:[ROWS/2,2];
+  player=makePlayer(sp[1]*TILE+TILE/2,sp[0]*TILE);
+  spawnEnemies(rooms);
+  spawnBoss(rooms[rooms.length-1]);
+  spawnLoot(rooms);
+  spawnKeysAndDoors(rooms);
+  camX=player.x-W/2;camY=player.y-H/2;fireTimer=0;
+  document.getElementById('msg-overlay').classList.add('hidden');
+  document.getElementById('boss-bar-outer').style.dis
