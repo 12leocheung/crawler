@@ -103,7 +103,7 @@ resize(); window.addEventListener('resize',resize);
 // ── Constants ──────────────────────────────────
 const TILE=18, COLS=100, ROWS=70;
 const MAP_W=COLS*TILE, MAP_H=ROWS*TILE;
-const GRAV=0.52, LIFE_INTERVAL=5000, TOTAL_AREAS=5;
+const GRAV=0.32, LIFE_INTERVAL=5000, TOTAL_AREAS=5;
 
 // ── Input ──────────────────────────────────────
 const keys={};
@@ -198,21 +198,28 @@ const ETYPES={
   phantom: {hp:40, spd:0.6,dmg:30,col:'#a0f',kind:'ranged', pts:100,w:11,h:16,fireRate:3500},
   turret:  {hp:60, spd:0,  dmg:18,col:'#f88',kind:'turret', pts:80, w:14,h:14,fireRate:1400},
   leaper:  {hp:30, spd:1.8,dmg:15,col:'#ff4',kind:'leaper', pts:65, w:11,h:15},
+  // New types
+  stalker: {hp:45, spd:0.0,dmg:20,col:'#f4f',kind:'stalker',pts:75, w:11,h:15,fireRate:2200}, // turns invisible, ambushes
+  swarm:   {hp:12, spd:3.2,dmg:6, col:'#0ff',kind:'swarm',  pts:25, w:8, h:8,  fireRate:9999}, // tiny fast pack
+  shielder:{hp:90, spd:0.8,dmg:18,col:'#44f',kind:'shielder',pts:85,w:15,h:18},               // blocks bullets from front
+  sniper:  {hp:35, spd:0.4,dmg:35,col:'#ff8',kind:'sniper', pts:90, w:12,h:16,fireRate:4000}, // long range, laser sight
+  burster: {hp:55, spd:1.3,dmg:15,col:'#f80',kind:'burster',pts:70, w:13,h:17,fireRate:1200}, // fires 3-round burst
+  lurker:  {hp:65, spd:1.6,dmg:18,col:'#80f',kind:'lurker', pts:80, w:12,h:16},               // drops from ceiling
 };
 
 const POOLS=[
-  ['crawler','skitter'],
-  ['crawler','skitter','gunner','drone'],
-  ['gunner','brute','drone','bomber','leaper'],
-  ['brute','guardian','phantom','drone','turret'],
-  ['brute','guardian','phantom','bomber','turret','leaper'],
+  ['crawler','skitter','swarm'],
+  ['crawler','skitter','gunner','drone','swarm','lurker'],
+  ['gunner','brute','drone','bomber','leaper','stalker','burster'],
+  ['brute','guardian','phantom','drone','turret','shielder','sniper'],
+  ['brute','guardian','phantom','bomber','turret','leaper','stalker','shielder','sniper','burster','lurker'],
 ];
 
 // ══════════════════════════════════════════════
 //  PLAYER
 // ══════════════════════════════════════════════
 function createPlayer(){
-  return {x:3*TILE,y:(ROWS/2)*TILE,vx:0,vy:0,w:13,h:19,
+  return {x:3*TILE,y:(ROWS/2)*TILE,vx:0,vy:0,w:11,h:16,
     hp:100,maxHp:100,shield:0,maxShield:50,
     onGround:false,facing:1,invincible:0,dashCd:0,
     weapon:WEAPONS.pulse,animFrame:0,animTimer:0,
@@ -228,9 +235,9 @@ function solid(gx,gy){
   return grid[r][c]===1;
 }
 function corners(e){
-  const hw=e.w/2;
-  return[{x:e.x-hw+1,y:e.y},{x:e.x+hw-1,y:e.y},
-         {x:e.x-hw+1,y:e.y+e.h-1},{x:e.x+hw-1,y:e.y+e.h-1}];
+  const hw=e.w/2-1; // 1px inset so hitbox is visually tight
+  return[{x:e.x-hw,y:e.y+1},{x:e.x+hw,y:e.y+1},
+         {x:e.x-hw,y:e.y+e.h-2},{x:e.x+hw,y:e.y+e.h-2}];
 }
 function moveEntity(e){
   e.x+=e.vx;
@@ -403,6 +410,7 @@ function aiUpdate(e,dt){
     return; // turrets don't move
   }
 
+  if(e.kind==='stalker') ctx.globalAlpha=e.alpha||1;
   if(e.kind==='drone'){
     e.vy+=(player.y+player.h/2-TILE-(e.y+e.h/2))*.04-e.vy*.1;
     e.vx+=(dx>0?1:-1)*.15; e.vx=Math.max(-e.spd,Math.min(e.spd,e.vx)); e.vx*=.88;
@@ -434,6 +442,86 @@ function aiUpdate(e,dt){
     e.fireTimer+=dt;
     if(e.fireTimer>e.fireRate&&dist<280){e.fireTimer=0;shoot(e,player.x,player.y,{dmg:e.dmg,burst:2,spread:0.12,spd:8,col:e.col,r:3},false);}
     if(dist<18&&!player.invincible) hitPlayer(e.dmg);
+  } else if(e.kind==='stalker'){
+    // Turns semi-invisible when far; rushes when close
+    e.stalkTimer=(e.stalkTimer||0)+dt;
+    if(dist>120){
+      e.vx+=(dx>0?1:-1)*.08; e.vx=Math.max(-1.2,Math.min(1.2,e.vx)); e.vx*=.9;
+      e.alpha=0.18; // nearly invisible while stalking
+    } else {
+      e.alpha=1;
+      e.vx+=(dx>0?1:-1)*.28; e.vx=Math.max(-3.5,Math.min(3.5,e.vx)); e.vx*=.85;
+      if(e.onGround&&Math.abs(dy)>24) e.vy=-9;
+    }
+    e.fireTimer+=dt;
+    if(e.fireTimer>e.fireRate&&dist<200){
+      e.fireTimer=0;
+      shoot(e,player.x,player.y,{dmg:e.dmg,burst:1,spread:0.04,spd:11,col:e.col,r:4},false);
+    }
+    if(dist<16&&!player.invincible)hitPlayer(e.dmg);
+  } else if(e.kind==='swarm'){
+    // Tiny fast pack, no jump, swarms in a cluster
+    e.vx+=(dx>0?1:-1)*.3; e.vx=Math.max(-e.spd,Math.min(e.spd,e.vx)); e.vx*=.82;
+    if(e.onGround&&Math.abs(dy)>20) e.vy=-7;
+    if(dist<12&&!player.invincible)hitPlayer(e.dmg);
+  } else if(e.kind==='shielder'){
+    // Blocks bullets from the front; must be flanked
+    e.vx+=(dx>0?1:-1)*.1; e.vx=Math.max(-e.spd,Math.min(e.spd,e.vx)); e.vx*=.88;
+    if(e.onGround&&Math.abs(dy)>26) e.vy=-8;
+    if(dist<20&&!player.invincible)hitPlayer(e.dmg);
+    e.shielded=dist<300; // flag used in bullet collision and draw
+  } else if(e.kind==='sniper'){
+    // Stays still, shows laser dot, fires slow devastating shot
+    e.vx*=0.7;
+    e.fireTimer+=dt;
+    if(e.fireTimer>e.fireRate&&dist<400){
+      e.fireTimer=0;
+      e.charging=true;
+      e.chargeTimer=800; // telegraph
+    }
+    if(e.charging){
+      e.chargeTimer-=dt;
+      if(e.chargeTimer<=0){
+        e.charging=false;
+        shoot(e,player.x,player.y,{dmg:e.dmg,burst:1,spread:0.01,spd:22,col:e.col,r:5},false);
+        burst(e.x,e.y,e.col,6,3);
+      }
+    }
+  } else if(e.kind==='burster'){
+    // Keeps medium distance, fires 3-bullet bursts rapidly
+    if(dist<90) e.vx-=(dx>0?1:-1)*.22;
+    else if(dist>160) e.vx+=(dx>0?1:-1)*.14;
+    e.vx=Math.max(-e.spd,Math.min(e.spd,e.vx)); e.vx*=.86;
+    e.fireTimer+=dt;
+    if(e.fireTimer>e.fireRate&&dist<260){
+      e.fireTimer=0;
+      // fire 3 quick shots with short delay
+      for(let bi=0;bi<3;bi++) setTimeout(()=>{
+        if(e.hp>0) shoot(e,player.x,player.y,{dmg:e.dmg,burst:1,spread:0.07,spd:10,col:e.col,r:3},false);
+      },bi*90);
+    }
+    if(dist<16&&!player.invincible)hitPlayer(e.dmg);
+  } else if(e.kind==='lurker'){
+    // Clings to ceiling and drops on player, then retreats
+    e.lurkerState=e.lurkerState||'wait';
+    if(e.lurkerState==='wait'){
+      // hang near ceiling
+      e.vx+=(dx>0?1:-1)*.06; e.vx=Math.max(-0.8,Math.min(0.8,e.vx)); e.vx*=.9;
+      e.vy=-GRAV*0.8; // partially cancel gravity to cling
+      if(Math.abs(dx)<60&&dist<180){e.lurkerState='drop';e.vy=8;}
+    } else if(e.lurkerState==='drop'){
+      // free-fall onto player
+      if(e.onGround){
+        if(dist<30&&!player.invincible)hitPlayer(e.dmg*2);
+        burst(e.x,e.y,e.col,10,4);addShake(4,12);
+        e.lurkerState='flee';e.fleeCd=1200;
+      }
+    } else { // flee
+      e.fleeCd-=dt;
+      e.vx-=(dx>0?1:-1)*.25; e.vx=Math.max(-2.5,Math.min(2.5,e.vx));
+      if(e.onGround) e.vy=-9;
+      if(e.fleeCd<=0) e.lurkerState='wait';
+    }
   } else { // ranged/phantom
     if(dist<100) e.vx-=(dx>0?1:-1)*.2;
     else if(dist>180) e.vx+=(dx>0?1:-1)*.1;
@@ -625,17 +713,17 @@ function update(ts){
   const mvX=(keys['ArrowRight']||keys['KeyD']?1:0)-(keys['ArrowLeft']||keys['KeyA']?1:0);
   p.dashCd=Math.max(0,p.dashCd-dt);
   if((keys['ShiftLeft']||keys['ShiftRight'])&&p.dashCd<=0&&mvX!==0){
-    p.vx=mvX*16;p.dashCd=800;burst(p.x,p.y,'#0ff',8,4);p.invincible=Math.max(p.invincible,18);
+    p.vx=mvX*8;p.dashCd=900;burst(p.x,p.y,'#0ff',8,4);p.invincible=Math.max(p.invincible,18);
   }
-  p.vx=mvX*3.2;
-  if(mvX===0) p.vx*=0.7;
-  if(mvX!==0) p.facing=mvX;
+  // Smooth acceleration / deceleration
+  if(mvX!==0){ p.vx+=(mvX*3.0-p.vx)*0.18; p.facing=mvX; }
+  else { p.vx*=0.72; }
   const awx=mx+camX-p.x; if(awx!==0) p.facing=awx>0?1:-1;
 
   const jumpNow=keys['ArrowUp']||keys['KeyW']||keys['Space'];
   if(jumpNow&&!prevJump){
-    if(p.onGround){p.vy=-10;}
-    else if(p.doubleJump>0){p.vy=-9;p.doubleJump--;burst(p.x,p.y,'#0ff',5,3);}
+    if(p.onGround){p.vy=-8.5;}
+    else if(p.doubleJump>0){p.vy=-7.5;p.doubleJump--;burst(p.x,p.y,'#0ff',5,3);}
   }
   prevJump=jumpNow;
   if(p.onGround) p.doubleJump=1;
@@ -671,6 +759,7 @@ function update(ts){
       enemies.forEach(e=>{
         if(e.hp<=0)return;
         if(e.typeName==='guardian'&&e.facing!==Math.sign(b.vx))return;
+        if(e.kind==='shielder'&&e.shielded&&e.facing===Math.sign(b.vx)){burst(b.x,b.y,'#44f',4,2);b.life=0;return;}
         if(Math.abs(b.x-e.x)<e.w/2+b.r&&Math.abs(b.y-e.y-e.h/2)<e.h/2+b.r){
           e.hp-=b.dmg;burst(b.x,b.y,b.col,3,2);b.life=0;e.alert=true;
         }
@@ -970,12 +1059,29 @@ function drawEnemy(e){
     ctx.fillRect(x+1,yy+e.h-5+Math.abs(lo),e.w/2-1,5);
   }
 
+  // New type extras
+  if(e.kind==='shielder'&&e.shielded){
+    ctx.fillStyle='rgba(68,68,255,0.55)';
+    ctx.fillRect(f>0?x+e.w/2-1:x-e.w/2-5,yy,6,e.h);
+  }
+  if(e.kind==='sniper'&&e.charging){
+    // laser sight line to player
+    ctx.strokeStyle='rgba(255,248,0,0.5)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x+(f>0?e.w/2:-e.w/2),yy+e.h/2);
+    ctx.lineTo(player.x-camX,player.y-camY+player.h/2); ctx.stroke();
+  }
+  if(e.kind==='stalker'){
+    ctx.globalAlpha=e.alpha||1;
+    // re-draw body with alpha (already drawn above, just set alpha for HP bar)
+  }
+
   // HP bar (only if damaged)
   if(e.hp<e.maxHp){
     const bw=e.w+4,bx=x-bw/2|0;
     ctx.fillStyle='#300'; ctx.fillRect(bx,y-10,bw,3);
     ctx.fillStyle=e.col; ctx.fillRect(bx,y-10,bw*(e.hp/e.maxHp)|0,3);
   }
+  ctx.globalAlpha=1;
 }
 
 function drawBoss(b){
